@@ -22,7 +22,7 @@ namespace ActUUploader
     {
         //private const string AdaptiveStreamingTransformName = "MyTransformWithAdaptiveStreamingPreset";
         private const string AdaptiveStreamingTransformName = "AdaptiveStreamingWithThumbnailPreset";
-        private const string InputMP4FileName = @"ignite.mp4";
+        public static string InputMP4FileName = @"ignite.mp4";
         private const string OutputFolderName = @"Output";
 
         // Set this variable to true if you want to authenticate Interactively through the browser using your Azure user account
@@ -97,17 +97,23 @@ namespace ActUUploader
             log.LogInformation("C# HTTP trigger function processed a request.");
 
             string name = req.Query["name"];
+            string inputAssetName = req.Query["inputAssetName"];
+            string inputUrl = req.Query["inputUrl"];
+            string transformName = req.Query["name"];
+            string builtInPreset = req.Query["builtInPreset"];
 
             string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             dynamic data = JsonConvert.DeserializeObject(requestBody);
             name = name ?? data?.name;
-
+            inputAssetName = inputAssetName ?? data?.inputAssetName;
+            inputUrl = inputUrl ?? data?.inputUrl;
+            transformName = transformName ?? data?.transformName;
+            builtInPreset = builtInPreset ?? data?.builtInPreset;
+            InputMP4FileName = inputUrl?? data?.inputUrl;
             string responseMessage = string.IsNullOrEmpty(name)
                 ? "This HTTP triggered function executed successfully. Pass a name in the query string or in the request body for a personalized response."
                 : $"Hello, {name}. This HTTP triggered function executed successfully.";
             log.LogInformation(responseMessage);
-
-
 
 
             // If Visual Studio is used, let's read the .env file which should be in the root folder (same folder than the solution .sln file).
@@ -115,7 +121,7 @@ namespace ActUUploader
             // You can create this ".env" file by saving the "sample.env" file as ".env" file and fill it with the right values.
             try
             {
-                DotEnv.Load(".env");
+                DotEnv.Load("sample.env");
             }
             catch
             {
