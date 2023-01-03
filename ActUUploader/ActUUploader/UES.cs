@@ -15,15 +15,19 @@ using Microsoft.Azure.Management.Media.Models;
 using Microsoft.Azure.Management.Media;
 using System.Collections.Generic;
 using Microsoft.Extensions.Configuration;
+using System.Net.Http;
+using System.Net;
+using System.Text;
 
-namespace ActUUploader
+namespace archimediavideo
 {
     public static class UES
     {
         //private const string AdaptiveStreamingTransformName = "MyTransformWithAdaptiveStreamingPreset";
-        private const string AdaptiveStreamingTransformName = "AdaptiveStreamingWithThumbnailPreset";
+        private static string AdaptiveStreamingTransformName = "AdaptiveStreamingWithThumbnailPreset";
         public static string InputMP4FileName = @"ignite.mp4";
         private const string OutputFolderName = @"Output";
+        private static AnswerBodyModel dataOk;
 
         // Set this variable to true if you want to authenticate Interactively through the browser using your Azure user account
         private const bool UseInteractiveAuth = false;
@@ -97,7 +101,7 @@ namespace ActUUploader
             log.LogInformation("C# HTTP trigger function processed a request.");
 
             string name = req.Query["name"];
-            string inputAssetName = req.Query["inputAssetName"];
+            string assetName = req.Query["inputAssetName"];
             string inputUrl = req.Query["inputUrl"];
             string transformName = req.Query["name"];
             string builtInPreset = req.Query["builtInPreset"];
@@ -105,17 +109,18 @@ namespace ActUUploader
             string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             dynamic data = JsonConvert.DeserializeObject(requestBody);
             name = name ?? data?.name;
-            inputAssetName = inputAssetName ?? data?.inputAssetName;
+            assetName = assetName ?? data?.inputAssetName;
             inputUrl = inputUrl ?? data?.inputUrl;
-            transformName = transformName ?? data?.transformName;
-            builtInPreset = builtInPreset ?? data?.builtInPreset;
+            //transformName = transformName ?? data?.transformName;
+            AdaptiveStreamingTransformName = builtInPreset ?? data?.builtInPreset;
             InputMP4FileName = inputUrl?? data?.inputUrl;
+
             string responseMessage = string.IsNullOrEmpty(name)
-                ? "This HTTP triggered function executed successfully. Pass a name in the query string or in the request body for a personalized response."
+                ? "Bad Request for archimediavideo."
                 : $"Hello, {name}. This HTTP triggered function executed successfully.";
             log.LogInformation(responseMessage);
-
-
+            if(string.IsNullOrEmpty(name)|| string.IsNullOrEmpty(assetName)|| string.IsNullOrEmpty(inputUrl))
+                return new BadRequestObjectResult(responseMessage);
             // If Visual Studio is used, let's read the .env file which should be in the root folder (same folder than the solution .sln file).
             // Same code will work in VS Code, but VS Code uses also launch.json to get the .env file.
             // You can create this ".env" file by saving the "sample.env" file as ".env" file and fill it with the right values.
@@ -137,7 +142,7 @@ namespace ActUUploader
 
             try
             {
-                await RunAsync(config);
+                await RunAsync(config, assetName);
             }
             catch (Exception exception)
             {
@@ -155,7 +160,7 @@ namespace ActUUploader
                 }
             }
 
-            return new OkObjectResult(responseMessage);
+            return new OkObjectResult(dataOk);
         }
 
 
@@ -166,7 +171,7 @@ namespace ActUUploader
         /// <param name="config">The parm is of type ConfigWrapper. This class reads values from local configuration file.</param>
         /// <returns></returns>
         // <RunAsync>
-        private static async Task RunAsync(ConfigWrapper config)
+        private static async Task RunAsync(ConfigWrapper config,string assetName)
         {
             IAzureMediaServicesClient client;
             try
@@ -182,15 +187,15 @@ namespace ActUUploader
 
             // Set the polling interval for long running operations to 2 seconds.
             // The default value is 30 seconds for the .NET client SDK
-            client.LongRunningOperationRetryTimeout = 2;
+            client.LongRunningOperationRetryTimeout = 60;
 
             // Creating a unique suffix so that we don't have name collisions if you run the sample
             // multiple times without cleaning up.
             string uniqueness = Guid.NewGuid().ToString("N");
-            string jobName = $"job-{uniqueness}";
-            string locatorName = $"locator-{uniqueness}";
-            string outputAssetName = $"output-{uniqueness}";
-            string inputAssetName = $"input-{uniqueness}";
+            string jobName = $"job-{assetName}-{uniqueness}";
+            string locatorName = $"locator-{assetName}-{uniqueness}";
+            string outputAssetName = $"output-{assetName}-{uniqueness}";
+            string inputAssetName = $"input-{assetName}-{uniqueness}";
 
             // Ensure that you have the desired encoding Transform. This is really a one time setup operation.
             _ = await GetOrCreateTransformAsync(client, config.ResourceGroup, config.AccountName, AdaptiveStreamingTransformName);
@@ -227,13 +232,21 @@ namespace ActUUploader
                 // And using just /manifest alone will return Microsoft Smooth Streaming format.
                 // There are additional formats available that are not returned in this call, please check the documentation
                 // on the dynamic packager for additional formats - see https://docs.microsoft.com/azure/media-services/latest/dynamic-packaging-overview
-                IList<string> urls = await GetStreamingUrlsAsync(client, config.ResourceGroup, config.AccountName, locator.Name);
-                foreach (var url in urls)
+                
+                //IList<string> urls = await GetStreamingUrlsAsync(client, config.ResourceGroup, config.AccountName, locator.Name);
+                //foreach (var url in urls)
+                //{
+                //    Console.WriteLine(url);
+                //}
+
+                dataOk = new()
                 {
-                    Console.WriteLine(url);
-                }
+                    OutputAssetName = outputAsset.Name,
+                    JobName = job.Name
+                };
             }
 
+            
             Console.WriteLine("Done. Copy and paste the Streaming URL ending in '/manifest' into the Azure Media Player at 'http://aka.ms/azuremediaplayer'.");
             Console.WriteLine("See the documentation on Dynamic Packaging for additional format support, including CMAF.");
             Console.WriteLine("https://docs.microsoft.com/azure/media-services/latest/dynamic-packaging-overview");

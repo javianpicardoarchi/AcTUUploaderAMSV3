@@ -15,7 +15,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Common_Utils", "Common_Util
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Live", "Live\Live.csproj", "{1EDEFBD0-86A3-45A5-8A68-CFCD7612B746}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AcTUUploaderAMSV3", "ActUUploader\ActUUploader\AcTUUploaderAMSV3.csproj", "{EC6346A5-EC41-4CE3-8F87-9822E1880D98}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "archimediavideo", "ActUUploader\ActUUploader\archimediavideo.csproj", "{EC6346A5-EC41-4CE3-8F87-9822E1880D98}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

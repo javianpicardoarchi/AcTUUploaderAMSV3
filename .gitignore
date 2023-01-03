@@ -361,3 +361,5 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/AnalyzeVideos/ignite.mp4
+/UploadEncodeAndStreamFiles/ignite.mp4
