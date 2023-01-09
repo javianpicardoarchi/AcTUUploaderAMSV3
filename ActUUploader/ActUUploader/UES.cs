@@ -18,6 +18,7 @@ using Microsoft.Extensions.Configuration;
 using System.Net.Http;
 using System.Net;
 using System.Text;
+using Microsoft.AspNetCore.Authorization;
 
 namespace archimediavideo
 {
@@ -95,7 +96,7 @@ namespace archimediavideo
 
         [FunctionName("UES")]
         public static async Task<IActionResult> Run(
-            [HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = null)] HttpRequest req,
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = null)] HttpRequest req,
             ILogger log)
         {
             log.LogInformation("C# HTTP trigger function processed a request.");
