@@ -15,16 +15,12 @@ using Microsoft.Azure.Management.Media.Models;
 using Microsoft.Azure.Management.Media;
 using System.Collections.Generic;
 using Microsoft.Extensions.Configuration;
-using System.Net.Http;
-using System.Net;
-using System.Text;
-using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.Internal;
 
 namespace archimediavideo
 {
     public static class UES
     {
-        //private const string AdaptiveStreamingTransformName = "MyTransformWithAdaptiveStreamingPreset";
         private static string AdaptiveStreamingTransformName = "AdaptiveStreamingWithThumbnailPreset";
         public static string InputMP4FileName = @"ignite.mp4";
         private const string OutputFolderName = @"Output";
@@ -96,31 +92,30 @@ namespace archimediavideo
 
         [FunctionName("UES")]
         public static async Task<IActionResult> Run(
-            [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = null)] HttpRequest req,
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = null)] HttpRequest req,//, IFormCollection data, IFormFile inputFile,
             ILogger log)
         {
             log.LogInformation("C# HTTP trigger function processed a request.");
+            var formData = await req.ReadFormAsync();
+            string name = formData["name"];
+            string assetName = formData["inputAssetName"];
+            var inputFile = req.Form.Files["inputFile"];
+            string transformName = formData["transformName"];
+            string builtInPreset = formData["builtInPreset"];
 
-            string name = req.Query["name"];
-            string assetName = req.Query["inputAssetName"];
-            string inputUrl = req.Query["inputUrl"];
-            string transformName = req.Query["name"];
-            string builtInPreset = req.Query["builtInPreset"];
-
-            string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-            dynamic data = JsonConvert.DeserializeObject(requestBody);
-            name = name ?? data?.name;
-            assetName = assetName ?? data?.inputAssetName;
-            inputUrl = inputUrl ?? data?.inputUrl;
-            //transformName = transformName ?? data?.transformName;
-            AdaptiveStreamingTransformName = builtInPreset ?? data?.builtInPreset;
-            InputMP4FileName = inputUrl?? data?.inputUrl;
-
+            if (inputFile == null)
+            {
+                return new BadRequestObjectResult(new string("Missing Files to upload"));
+            }
+            string inputFileName = Path.GetFileName(inputFile.FileName);
+            Stream inputFileStream = inputFile.OpenReadStream();
+            AdaptiveStreamingTransformName = builtInPreset;
+            InputMP4FileName = inputFileName;
             string responseMessage = string.IsNullOrEmpty(name)
                 ? "Bad Request for archimediavideo."
                 : $"Hello, {name}. This HTTP triggered function executed successfully.";
             log.LogInformation(responseMessage);
-            if(string.IsNullOrEmpty(name)|| string.IsNullOrEmpty(assetName)|| string.IsNullOrEmpty(inputUrl))
+            if(string.IsNullOrEmpty(name)|| string.IsNullOrEmpty(assetName)|| inputFile.Length<0)
                 return new BadRequestObjectResult(responseMessage);
             // If Visual Studio is used, let's read the .env file which should be in the root folder (same folder than the solution .sln file).
             // Same code will work in VS Code, but VS Code uses also launch.json to get the .env file.
@@ -143,7 +138,7 @@ namespace archimediavideo
 
             try
             {
-                await RunAsync(config, assetName);
+                await RunAsync(config, assetName, inputFileName, inputFileStream);
             }
             catch (Exception exception)
             {
@@ -164,15 +159,13 @@ namespace archimediavideo
             return new OkObjectResult(dataOk);
         }
 
-
-
         /// <summary>
         /// Run the sample async.
         /// </summary>
         /// <param name="config">The parm is of type ConfigWrapper. This class reads values from local configuration file.</param>
         /// <returns></returns>
         // <RunAsync>
-        private static async Task RunAsync(ConfigWrapper config,string assetName)
+        private static async Task RunAsync(ConfigWrapper config,string assetName,string inputFileName,Stream inputFileStream)
         {
             IAzureMediaServicesClient client;
             try
@@ -202,7 +195,7 @@ namespace archimediavideo
             _ = await GetOrCreateTransformAsync(client, config.ResourceGroup, config.AccountName, AdaptiveStreamingTransformName);
 
             // Create a new input Asset and upload the specified local video file into it.
-            _ = await CreateInputAssetAsync(client, config.ResourceGroup, config.AccountName, inputAssetName, InputMP4FileName);
+            _ = await CreateInputAssetAsync(client, config.ResourceGroup, config.AccountName, inputAssetName, inputFileName, inputFileStream);
 
             // Use the name of the created input asset to create the job input.
             _ = new JobInputAsset(assetName: inputAssetName);
@@ -270,7 +263,8 @@ namespace archimediavideo
             string resourceGroupName,
             string accountName,
             string assetName,
-            string fileToUpload)
+            string inputFileName,
+            Stream inputFileStream)
         {
             // In this example, we are assuming that the asset name is unique.
             //
@@ -299,10 +293,19 @@ namespace archimediavideo
             // Use Storage API to get a reference to the Asset container
             // that was created by calling Asset's CreateOrUpdate method.  
             BlobContainerClient container = new BlobContainerClient(sasUri);
-            BlobClient blob = container.GetBlobClient(Path.GetFileName(fileToUpload));
+            //BlobClient blob = container.GetBlobClient(Path.GetFileName(inputFile));
 
-            // Use Strorage API to upload the file into the container in storage.
-            await blob.UploadAsync(fileToUpload);
+            //// Use Strorage API to upload the file into the container in storage.
+            //await blob.UploadAsync(inputFile);
+
+            BlobClient blob = container.GetBlobClient(inputFileName);
+            await blob.UploadAsync(inputFileStream);
+            //// Use stream data passed in API to upload the file into the container in storage.
+            //await using (Stream? data = inputFile.OpenReadStream())
+            //{
+            //    // Upload the file async
+            //    await blob.UploadAsync(data);
+            //}
 
             return asset;
         }
