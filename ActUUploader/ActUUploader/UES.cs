@@ -16,6 +16,9 @@ using Microsoft.Azure.Management.Media;
 using System.Collections.Generic;
 using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Http.Internal;
+using System.Net.Http;
+using System.Net;
+using System.Text;
 
 namespace archimediavideo
 {
@@ -24,7 +27,7 @@ namespace archimediavideo
         private static string AdaptiveStreamingTransformName = "AdaptiveStreamingWithThumbnailPreset";
         public static string InputMP4FileName = @"ignite.mp4";
         private const string OutputFolderName = @"Output";
-        private static AnswerBodyModel dataOk;
+        private static AnswerBodyModel answerBodyModel;
 
         // Set this variable to true if you want to authenticate Interactively through the browser using your Azure user account
         private const bool UseInteractiveAuth = false;
@@ -88,14 +91,18 @@ namespace archimediavideo
             /// </summary>
             [JsonProperty("jobName")]
             public string JobName { get; set; }
+
+            [JsonProperty("Message")]
+            public string Message { get; set; }
         }
 
         [FunctionName("UES")]
-        public static async Task<IActionResult> Run(
-            [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = null)] HttpRequest req,//, IFormCollection data, IFormFile inputFile,
+        public static async Task<HttpResponseMessage> Run(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = null)] HttpRequest req,
             ILogger log)
         {
             log.LogInformation("C# HTTP trigger function processed a request.");
+            //AnswerBodyModel answerBodyModel = null;
             var formData = await req.ReadFormAsync();
             string name = formData["name"];
             string assetName = formData["inputAssetName"];
@@ -103,10 +110,21 @@ namespace archimediavideo
             string transformName = formData["transformName"];
             string builtInPreset = formData["builtInPreset"];
 
-            if (inputFile == null)
+            if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(assetName) || inputFile.Length < 0 || inputFile == null)
             {
-                return new BadRequestObjectResult(new string("Missing Files to upload"));
+                answerBodyModel = new()
+                {
+                    OutputAssetName = "Bad Request",
+                    JobName = "",
+                    Message = "Bad Request"
+                };
+                var jsonToReturnError = JsonConvert.SerializeObject(answerBodyModel);
+                return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent(jsonToReturnError, Encoding.UTF8, "application/json")
+                };
             }
+
             string inputFileName = Path.GetFileName(inputFile.FileName);
             Stream inputFileStream = inputFile.OpenReadStream();
             AdaptiveStreamingTransformName = builtInPreset;
@@ -115,30 +133,23 @@ namespace archimediavideo
                 ? "Bad Request for archimediavideo."
                 : $"Hello, {name}. This HTTP triggered function executed successfully.";
             log.LogInformation(responseMessage);
-            if(string.IsNullOrEmpty(name)|| string.IsNullOrEmpty(assetName)|| inputFile.Length<0)
-                return new BadRequestObjectResult(responseMessage);
-            // If Visual Studio is used, let's read the .env file which should be in the root folder (same folder than the solution .sln file).
-            // Same code will work in VS Code, but VS Code uses also launch.json to get the .env file.
-            // You can create this ".env" file by saving the "sample.env" file as ".env" file and fill it with the right values.
+            
             try
             {
+                // If Visual Studio is used, let's read the .env file which should be in the root folder (same folder than the solution .sln file).
+                // Same code will work in VS Code, but VS Code uses also launch.json to get the .env file.
+                // You can create this ".env" file by saving the "sample.env" file as ".env" file and fill it with the right values.
                 DotEnv.Load("sample.env");
-            }
-            catch
-            {
 
-            }
+                ConfigWrapper config = new(new ConfigurationBuilder()
+                                .SetBasePath(Directory.GetCurrentDirectory())
+                                .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+                                .AddEnvironmentVariables() // parses the values from the optional .env file at the solution root
+                                .Build());
 
-            ConfigWrapper config = new(new ConfigurationBuilder()
-                .SetBasePath(Directory.GetCurrentDirectory())
-                .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
-                .AddEnvironmentVariables() // parses the values from the optional .env file at the solution root
-                .Build());
-
-
-            try
-            {
-                await RunAsync(config, assetName, inputFileName, inputFileStream);
+                log.LogInformation("RunAsync Triggered for : " + assetName);
+                await RunAsync(config, assetName, inputFileName, inputFileStream, log);              
+                
             }
             catch (Exception exception)
             {
@@ -155,8 +166,12 @@ namespace archimediavideo
                         $"ERROR: API call failed with error code '{apiException.Body.Error.Code}' and message '{apiException.Body.Error.Message}'.");
                 }
             }
+            log.LogInformation("OutPut Json from RunAsync: " + JsonConvert.SerializeObject(answerBodyModel, Formatting.Indented));
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(JsonConvert.SerializeObject(answerBodyModel, Formatting.Indented), Encoding.UTF8, "application/json")
+            };
 
-            return new OkObjectResult(dataOk);
         }
 
         /// <summary>
@@ -165,18 +180,25 @@ namespace archimediavideo
         /// <param name="config">The parm is of type ConfigWrapper. This class reads values from local configuration file.</param>
         /// <returns></returns>
         // <RunAsync>
-        private static async Task RunAsync(ConfigWrapper config,string assetName,string inputFileName,Stream inputFileStream)
+        private static async Task RunAsync(ConfigWrapper config, string assetName, string inputFileName, Stream inputFileStream, ILogger log)
         {
-            IAzureMediaServicesClient client;
+            IAzureMediaServicesClient client=null;
+            //AnswerBodyModel data = null;
             try
             {
+                log.LogInformation("CreateMediaServicesClientAsync Triggered for : " + assetName);
                 client = await Authentication.CreateMediaServicesClientAsync(config, UseInteractiveAuth);
             }
             catch (Exception e)
             {
                 Console.Error.WriteLine("TIP: Make sure that you have filled out the appsettings.json file before running this sample.");
                 Console.Error.WriteLine($"{e.Message}");
-                return;
+                answerBodyModel = new()
+                {
+                    OutputAssetName = "Bad Request",
+                    JobName = "",
+                    Message = "Could not create media services client."
+                };                
             }
 
             // Set the polling interval for long running operations to 2 seconds.
@@ -191,27 +213,39 @@ namespace archimediavideo
             string outputAssetName = $"output-{assetName}-{uniqueness}";
             string inputAssetName = $"input-{assetName}-{uniqueness}";
 
+            log.LogInformation("GetOrCreateTransformAsync Triggered for : " + assetName);
             // Ensure that you have the desired encoding Transform. This is really a one time setup operation.
             _ = await GetOrCreateTransformAsync(client, config.ResourceGroup, config.AccountName, AdaptiveStreamingTransformName);
 
+            log.LogInformation("CreateInputAssetAsync Triggered for : " + assetName);
             // Create a new input Asset and upload the specified local video file into it.
             _ = await CreateInputAssetAsync(client, config.ResourceGroup, config.AccountName, inputAssetName, inputFileName, inputFileStream);
 
             // Use the name of the created input asset to create the job input.
             _ = new JobInputAsset(assetName: inputAssetName);
 
+            log.LogInformation("CreateOutputAssetAsync Triggered for : " + assetName);
             // Output from the encoding Job must be written to an Asset, so let's create one
             Asset outputAsset = await CreateOutputAssetAsync(client, config.ResourceGroup, config.AccountName, outputAssetName);
 
+            log.LogInformation("SubmitJobAsync Triggered for : " + assetName);
             _ = await SubmitJobAsync(client, config.ResourceGroup, config.AccountName, AdaptiveStreamingTransformName, jobName, inputAssetName, outputAsset.Name);
             // In this demo code, we will poll for Job status
             // Polling is not a recommended best practice for production applications because of the latency it introduces.
             // Overuse of this API may trigger throttling. Developers should instead use Event Grid.
             Job job = await WaitForJobToFinishAsync(client, config.ResourceGroup, config.AccountName, AdaptiveStreamingTransformName, jobName);
 
+            answerBodyModel = new()
+            {
+                OutputAssetName = outputAsset.Name,
+                JobName = job.Name
+            };
+            log.LogInformation("OutputAssetName Object : " + answerBodyModel);
+
             if (job.State == JobState.Finished)
             {
-                Console.WriteLine("Job finished.");
+                Console.WriteLine("Job finished for " + assetName);
+                log.LogInformation("Job finished for : " + assetName);
                 if (!Directory.Exists(OutputFolderName))
                     Directory.CreateDirectory(OutputFolderName);
 
@@ -226,24 +260,13 @@ namespace archimediavideo
                 // And using just /manifest alone will return Microsoft Smooth Streaming format.
                 // There are additional formats available that are not returned in this call, please check the documentation
                 // on the dynamic packager for additional formats - see https://docs.microsoft.com/azure/media-services/latest/dynamic-packaging-overview
-                
+
                 //IList<string> urls = await GetStreamingUrlsAsync(client, config.ResourceGroup, config.AccountName, locator.Name);
                 //foreach (var url in urls)
                 //{
                 //    Console.WriteLine(url);
                 //}
-
-                dataOk = new()
-                {
-                    OutputAssetName = outputAsset.Name,
-                    JobName = job.Name
-                };
-            }
-
-            
-            Console.WriteLine("Done. Copy and paste the Streaming URL ending in '/manifest' into the Azure Media Player at 'http://aka.ms/azuremediaplayer'.");
-            Console.WriteLine("See the documentation on Dynamic Packaging for additional format support, including CMAF.");
-            Console.WriteLine("https://docs.microsoft.com/azure/media-services/latest/dynamic-packaging-overview");
+            };
         }
         // </RunAsync>
 
