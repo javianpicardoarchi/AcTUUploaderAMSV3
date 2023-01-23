@@ -210,7 +210,7 @@ namespace archimediavideo
             string uniqueness = Guid.NewGuid().ToString("N");
             string jobName = $"job-{assetName}-{uniqueness}";
             string locatorName = $"locator-{assetName}-{uniqueness}";
-            string outputAssetName = $"output-{assetName}-{uniqueness}";
+            string outputAssetName = uniqueness;
             string inputAssetName = $"input-{assetName}-{uniqueness}";
 
             log.LogInformation("GetOrCreateTransformAsync Triggered for : " + assetName);
